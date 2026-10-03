@@ -659,4 +659,86 @@ public class SunsetMod {
             Minecraft mc = Minecraft.getMinecraft();
             boolean hover = mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12;
             Gui.drawRect(ax, ay, ax + 170, ay + 12, hover ? 0xBB282828 : 0xAA181818);
-            int c = (get != null && get.get()) ? 0xFF00FF00
+            int c = (get != null && get.get()) ? 0xFF00FF00 : 0xFFFF5555;
+            if (get == null) c = 0xFFFFFFFF;
+            mc.fontRenderer.drawString(name, ax + 3, ay + 2, c);
+            if (expanded) {
+                int sy = ay + 14;
+                for (Sl s : sliders) { s.draw(ax + 5, sy, mx); sy += 12; }
+                for (Cl ce : colors) { ce.draw(ax + 5, sy, mx, my); sy += 12; }
+            }
+        }
+        void click(int mx, int my, int btn, int ax, int ay) {
+            if (mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12) {
+                if (btn == 0 && get != null) set.set(!get.get());
+                else if (btn == 1) expanded = !expanded;
+                return;
+            }
+            if (!expanded) return;
+            int sy = ay + 14;
+            for (Sl s : sliders) {
+                if (btn == 0 && mx >= ax + 5 && mx <= ax + 145 && my >= sy && my <= sy + 10) s.drag = true;
+                sy += 12;
+            }
+            for (Cl ce : colors) { ce.click(mx, my, btn, ax + 5, sy); sy += 12; }
+        }
+        void release() { for (Sl s : sliders) s.drag = false; }
+    }
+
+    public static class Sl {
+        public interface FG { float get(); }
+        public interface FS { void set(float v); }
+        final String name; final FG get; final FS set;
+        final float min, max; boolean drag;
+        public Sl(String n, FG g, FS s, float mn, float mx) {
+            name = n; get = g; set = s; min = mn; max = mx;
+        }
+        void draw(int sx, int sy, int mx) {
+            Minecraft mc = Minecraft.getMinecraft();
+            int w = 140, h = 10;
+            float v = get.get();
+            float p = Math.max(0, Math.min(1, (v - min) / (max - min)));
+            Gui.drawRect(sx, sy, sx + w, sy + h, 0xAA282828);
+            Gui.drawRect(sx, sy, (int)(sx + w * p), sy + h, 0xFF3399FF);
+            String val = (max - min) > 10 ? String.format("%.0f", v) : String.format("%.1f", v);
+            mc.fontRenderer.drawString(name + ": " + val, sx + 2, sy + 1, 0xFFFFFF);
+            if (drag) {
+                float np = Math.max(0, Math.min(1, (float)(mx - sx) / w));
+                set.set(min + np * (max - min));
+            }
+        }
+    }
+
+    public static class Cl {
+        public interface IG { int get(); }
+        public interface IS { void set(int v); }
+        static final int[] PRESETS = {
+            0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00,
+            0xFF00FF, 0x00FFFF, 0xFFFFFF, 0x000000,
+            0x3399FF, 0x87CEEB, 0xAAAAAA, 0xFF8000
+        };
+        final String name; final IG get; final IS set;
+        public Cl(String n, IG g, IS s) { name = n; get = g; set = s; }
+        void draw(int sx, int sy, int mx, int my) {
+            Minecraft mc = Minecraft.getMinecraft();
+            int v = get.get();
+            Gui.drawRect(sx, sy, sx + 160, sy + 10, 0xAA282828);
+            int sq = 9;
+            for (int i = 0; i < PRESETS.length; i++) {
+                int px = sx + 2 + i * (sq + 1);
+                Gui.drawRect(px, sy + 1, px + sq, sy + 9, PRESETS[i] | 0xFF000000);
+                if (mx >= px && mx <= px + sq && my >= sy + 1 && my <= sy + 9)
+                    Gui.drawRect(px, sy + 9, px + sq, sy + 10, 0xFFFFFFFF);
+            }
+            Gui.drawRect(sx + 145, sy + 2, sx + 155, sy + 8, v | 0xFF000000);
+        }
+        void click(int mx, int my, int btn, int ax, int ay) {
+            if (my < ay || my > ay + 10) return;
+            int sq = 9;
+            for (int i = 0; i < PRESETS.length; i++) {
+                int px = ax + 2 + i * (sq + 1);
+                if (btn == 0 && mx >= px && mx <= px + sq) { set.set(PRESETS[i]); return; }
+            }
+        }
+    }
+}
