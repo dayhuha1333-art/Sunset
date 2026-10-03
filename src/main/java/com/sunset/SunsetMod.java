@@ -50,7 +50,6 @@ public class SunsetMod {
     private static Configuration config;
     public static KeyBinding guiKey;
 
-    // ===================== COMBAT =====================
     public static boolean killAuraEnabled = false;
     public static float killAuraFov = 30f;
     public static float killAuraMiss = 20f;
@@ -61,7 +60,6 @@ public class SunsetMod {
     private static long killAuraLast = 0;
     private static long triggerBotLast = 0;
 
-    // ===================== VISUAL =====================
     public static boolean fullbrightEnabled = false;
     public static float savedGamma = -1f;
 
@@ -77,7 +75,6 @@ public class SunsetMod {
 
     public static boolean disFireEnabled = true;
 
-    // ===================== HUD =====================
     public static boolean keysInfEnabled = false;
     public static int keysInfCorner = 0;
     public static int keysInfColor = 0xFFFFFF;
@@ -118,7 +115,6 @@ public class SunsetMod {
         }
     }
 
-    // ===================== TICK =====================
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
@@ -138,7 +134,6 @@ public class SunsetMod {
         if (triggerBotEnabled) doTriggerBot();
     }
 
-    // ===================== KILLAURA =====================
     private static void doKillAura() {
         Minecraft mc = mc();
         if (mc.player == null || mc.world == null || mc.playerController == null) return;
@@ -187,7 +182,6 @@ public class SunsetMod {
         return new float[]{yaw, pitch};
     }
 
-    // ===================== TRIGGERBOT =====================
     private static void doTriggerBot() {
         Minecraft mc = mc();
         if (mc.player == null || mc.world == null || mc.playerController == null) return;
@@ -213,7 +207,6 @@ public class SunsetMod {
         mc.player.swingArm(EnumHand.MAIN_HAND);
     }
 
-    // ===================== EVENTS =====================
     @SubscribeEvent
     public void onFov(EntityViewRenderEvent.FOVModifier event) {
         if (fovOverride) event.setFOV(customFov);
@@ -409,7 +402,6 @@ public class SunsetMod {
         return ThreadLocalRandom.current().nextFloat() * 100f < percent;
     }
 
-    // ===================== CONFIG =====================
     private static void loadConfig() {
         try {
             config = new Configuration(new File("config/sunset.cfg"));
@@ -487,7 +479,6 @@ public class SunsetMod {
         } catch (Exception e) { LOG.error(e); }
     }
 
-    // ===================== GUI =====================
     public static class SunsetGui extends GuiScreen {
 
         private static final int W = 280, H = 300, TITLE_H = 20;
@@ -668,14 +659,4 @@ public class SunsetMod {
             Minecraft mc = Minecraft.getMinecraft();
             boolean hover = mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12;
             Gui.drawRect(ax, ay, ax + 170, ay + 12, hover ? 0xBB282828 : 0xAA181818);
-            int c = (get != null && get.get()) ? 0xFF00FF00 : 0xFFFF5555;
-            if (get == null) c = 0xFFFFFFFF;
-            mc.fontRenderer.drawString(name, ax + 3, ay + 2, c);
-            if (expanded) {
-                int sy = ay + 14;
-                for (Sl s : sliders) { s.draw(ax + 5, sy, mx); sy += 12; }
-                for (Cl ce : colors) { ce.draw(ax + 5, sy, mx, my); sy += 12; }
-            }
-        }
-        void click(int mx, int my, int btn, int ax, int ay) {
-            if (mx >= ax &&
+            int c = (get != null && get.get()) ? 0xFF00FF00
