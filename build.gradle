@@ -10,7 +10,6 @@ buildscript {
 
 apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'eclipse'
-apply plugin: 'idea'
 
 version = '1.0'
 group = 'com.sunset'
