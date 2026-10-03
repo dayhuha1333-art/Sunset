@@ -8,8 +8,10 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.potion.PotionEffect;
+import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraftforge.client.event.EntityViewRenderEvent;
@@ -24,6 +26,7 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.input.Keyboard;
@@ -37,8 +40,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
-@Mod(modid = "sunset", name = "Sunset", version = "3.1",
+@Mod(modid = "sunset", name = "Sunset", version = "4.0",
         acceptedMinecraftVersions = "[1.12.2]")
 public class SunsetMod {
 
@@ -46,6 +50,18 @@ public class SunsetMod {
     private static Configuration config;
     public static KeyBinding guiKey;
 
+    // ===================== COMBAT =====================
+    public static boolean killAuraEnabled = false;
+    public static float killAuraFov = 30f;
+    public static float killAuraMiss = 20f;
+
+    public static boolean triggerBotEnabled = false;
+    public static float triggerBotMiss = 20f;
+
+    private static long killAuraLast = 0;
+    private static long triggerBotLast = 0;
+
+    // ===================== VISUAL =====================
     public static boolean fullbrightEnabled = false;
     public static float savedGamma = -1f;
 
@@ -59,6 +75,9 @@ public class SunsetMod {
     public static int hitBoxColor = 0x00FF00;
     public static int hitBoxTargetColor = 0xFF0000;
 
+    public static boolean disFireEnabled = true;
+
+    // ===================== HUD =====================
     public static boolean keysInfEnabled = false;
     public static int keysInfCorner = 0;
     public static int keysInfColor = 0xFFFFFF;
@@ -78,9 +97,6 @@ public class SunsetMod {
     public static boolean armorHudEnabled = false;
     public static boolean potionTimerEnabled = false;
 
-    public static boolean chatTimestampsEnabled = false;
-    public static boolean disFireEnabled = true;
-
     private static Minecraft mc() { return Minecraft.getMinecraft(); }
 
     @Mod.EventHandler
@@ -91,7 +107,7 @@ public class SunsetMod {
         guiKey = new KeyBinding("Open Sunset GUI", Keyboard.KEY_RSHIFT, "Sunset");
         ClientRegistry.registerKeyBinding(guiKey);
         MinecraftForge.EVENT_BUS.register(this);
-        LOG.info("Sunset 3.1 initialized");
+        LOG.info("Sunset 4.0 initialized");
     }
 
     @SubscribeEvent
@@ -102,6 +118,102 @@ public class SunsetMod {
         }
     }
 
+    // ===================== TICK =====================
+    @SubscribeEvent
+    public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+
+        Minecraft mc = mc();
+        if (mc.gameSettings != null) {
+            if (fullbrightEnabled) {
+                if (savedGamma < 0) savedGamma = mc.gameSettings.gammaSetting;
+                mc.gameSettings.gammaSetting = 100f;
+            } else if (savedGamma >= 0) {
+                mc.gameSettings.gammaSetting = savedGamma;
+                savedGamma = -1f;
+            }
+        }
+
+        if (killAuraEnabled) doKillAura();
+        if (triggerBotEnabled) doTriggerBot();
+    }
+
+    // ===================== KILLAURA =====================
+    private static void doKillAura() {
+        Minecraft mc = mc();
+        if (mc.player == null || mc.world == null || mc.playerController == null) return;
+        if (!mc.player.isEntityAlive()) return;
+
+        EntityLivingBase target = null;
+        double bestDist = Double.MAX_VALUE;
+
+        for (Entity e : mc.world.getEntitiesWithinAABB(EntityLivingBase.class,
+                mc.player.getEntityBoundingBox().grow(4.5))) {
+            if (!(e instanceof EntityLivingBase)) continue;
+            EntityLivingBase living = (EntityLivingBase) e;
+            if (living == mc.player) continue;
+            if (!living.isEntityAlive()) continue;
+            if (!mc.player.canEntityBeSeen(living)) continue;
+            if (!isInFov(mc, living, killAuraFov)) continue;
+
+            double d = mc.player.getDistance(living);
+            if (d < bestDist) { bestDist = d; target = living; }
+        }
+
+        if (target == null) return;
+
+        long now = System.currentTimeMillis();
+        int delay = randInt(10, 80);
+        if (now - killAuraLast < delay) return;
+        killAuraLast = now;
+
+        float[] rot = getRotations(mc, target);
+        mc.player.rotationYaw = rot[0];
+        mc.player.rotationPitch = rot[1];
+
+        if (chance(killAuraMiss)) return;
+
+        mc.playerController.attackEntity(mc.player, target);
+        mc.player.swingArm(EnumHand.MAIN_HAND);
+    }
+
+    private static float[] getRotations(Minecraft mc, EntityLivingBase target) {
+        double dx = target.posX - mc.player.posX;
+        double dy = (target.posY + target.getEyeHeight()) - (mc.player.posY + mc.player.getEyeHeight());
+        double dz = target.posZ - mc.player.posZ;
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90);
+        float pitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
+        return new float[]{yaw, pitch};
+    }
+
+    // ===================== TRIGGERBOT =====================
+    private static void doTriggerBot() {
+        Minecraft mc = mc();
+        if (mc.player == null || mc.world == null || mc.playerController == null) return;
+        if (!mc.player.isEntityAlive()) return;
+        if (killAuraEnabled) return;
+
+        RayTraceResult over = mc.objectMouseOver;
+        if (over == null || over.typeOfHit != RayTraceResult.Type.ENTITY) return;
+        if (!(over.entityHit instanceof EntityLivingBase)) return;
+
+        EntityLivingBase target = (EntityLivingBase) over.entityHit;
+        if (!target.isEntityAlive()) return;
+        if (!mc.player.canEntityBeSeen(target)) return;
+
+        long now = System.currentTimeMillis();
+        int delay = randInt(30, 90);
+        if (now - triggerBotLast < delay) return;
+        triggerBotLast = now;
+
+        if (chance(triggerBotMiss)) return;
+
+        mc.playerController.attackEntity(mc.player, target);
+        mc.player.swingArm(EnumHand.MAIN_HAND);
+    }
+
+    // ===================== EVENTS =====================
     @SubscribeEvent
     public void onFov(EntityViewRenderEvent.FOVModifier event) {
         if (fovOverride) event.setFOV(customFov);
@@ -114,20 +226,6 @@ public class SunsetMod {
         float g = ((skyColor >> 8) & 0xFF) / 255f;
         float b = (skyColor & 0xFF) / 255f;
         event.setRed(r); event.setGreen(g); event.setBlue(b);
-    }
-
-    @SubscribeEvent
-    public void onClientTick(net.minecraftforge.fml.common.gameevent.TickEvent.ClientTickEvent event) {
-        if (event.phase != net.minecraftforge.fml.common.gameevent.TickEvent.Phase.END) return;
-        Minecraft mc = mc();
-        if (mc.gameSettings == null) return;
-        if (fullbrightEnabled) {
-            if (savedGamma < 0) savedGamma = mc.gameSettings.gammaSetting;
-            mc.gameSettings.gammaSetting = 100f;
-        } else if (savedGamma >= 0) {
-            mc.gameSettings.gammaSetting = savedGamma;
-            savedGamma = -1f;
-        }
     }
 
     @SubscribeEvent
@@ -215,7 +313,6 @@ public class SunsetMod {
             if (Keyboard.isKeyDown(Keyboard.KEY_D)) lines.add("D");
             if (Mouse.isButtonDown(1)) lines.add("RMB");
             if (Keyboard.isKeyDown(Keyboard.KEY_SPACE)) lines.add("Space");
-
             if (!lines.isEmpty()) {
                 int lineH = 10;
                 int boxW = 60;
@@ -294,10 +391,35 @@ public class SunsetMod {
         }
     }
 
+    private static boolean isInFov(Minecraft mc, EntityLivingBase target, float fov) {
+        double dx = target.posX - mc.player.posX;
+        double dz = target.posZ - mc.player.posZ;
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90);
+        float diff = Math.abs(mc.player.rotationYaw - yaw) % 360;
+        if (diff > 180) diff = 360 - diff;
+        return diff <= fov / 2f;
+    }
+
+    private static int randInt(int min, int max) {
+        if (max <= min) return min;
+        return ThreadLocalRandom.current().nextInt(min, max + 1);
+    }
+
+    private static boolean chance(float percent) {
+        return ThreadLocalRandom.current().nextFloat() * 100f < percent;
+    }
+
+    // ===================== CONFIG =====================
     private static void loadConfig() {
         try {
             config = new Configuration(new File("config/sunset.cfg"));
             config.load();
+
+            killAuraEnabled = config.get("combat", "killAura", false).getBoolean();
+            killAuraFov = (float) config.get("combat", "killAuraFov", 30.0).getDouble();
+            killAuraMiss = (float) config.get("combat", "killAuraMiss", 20.0).getDouble();
+            triggerBotEnabled = config.get("combat", "triggerBot", false).getBoolean();
+            triggerBotMiss = (float) config.get("combat", "triggerBotMiss", 20.0).getDouble();
 
             fullbrightEnabled = config.get("v", "fullbright", false).getBoolean();
             fovOverride = config.get("v", "fovOverride", false).getBoolean();
@@ -307,27 +429,22 @@ public class SunsetMod {
             hitBoxEnabled = config.get("v", "hitBox", false).getBoolean();
             hitBoxColor = config.get("v", "hitBoxColor", 0x00FF00).getInt();
             hitBoxTargetColor = config.get("v", "hitBoxTargetColor", 0xFF0000).getInt();
+            disFireEnabled = config.get("v", "disFire", true).getBoolean();
 
             keysInfEnabled = config.get("hud", "keysInf", false).getBoolean();
             keysInfCorner = config.get("hud", "keysInfCorner", 0).getInt();
             keysInfColor = config.get("hud", "keysInfColor", 0xFFFFFF).getInt();
-
             coordsEnabled = config.get("hud", "coords", false).getBoolean();
             coordsCorner = config.get("hud", "coordsCorner", 0).getInt();
             coordsColor = config.get("hud", "coordsColor", 0xFFFFFF).getInt();
-
             fpsEnabled = config.get("hud", "fps", false).getBoolean();
             fpsCorner = config.get("hud", "fpsCorner", 1).getInt();
             fpsColor = config.get("hud", "fpsColor", 0xFFFFFF).getInt();
-
             pingEnabled = config.get("hud", "ping", false).getBoolean();
             pingCorner = config.get("hud", "pingCorner", 1).getInt();
             pingColor = config.get("hud", "pingColor", 0xFFFFFF).getInt();
-
             armorHudEnabled = config.get("hud", "armorHud", false).getBoolean();
             potionTimerEnabled = config.get("hud", "potionTimer", false).getBoolean();
-            chatTimestampsEnabled = config.get("misc", "chatTimestamps", false).getBoolean();
-            disFireEnabled = config.get("misc", "disFire", true).getBoolean();
 
             if (config.hasChanged()) config.save();
         } catch (Exception e) { LOG.error(e); }
@@ -336,6 +453,12 @@ public class SunsetMod {
     public static void saveConfig() {
         if (config == null) return;
         try {
+            config.get("combat", "killAura", false).set(killAuraEnabled);
+            config.get("combat", "killAuraFov", 30.0).set(killAuraFov);
+            config.get("combat", "killAuraMiss", 20.0).set(killAuraMiss);
+            config.get("combat", "triggerBot", false).set(triggerBotEnabled);
+            config.get("combat", "triggerBotMiss", 20.0).set(triggerBotMiss);
+
             config.get("v", "fullbright", false).set(fullbrightEnabled);
             config.get("v", "fovOverride", false).set(fovOverride);
             config.get("v", "customFov", 70.0).set(customFov);
@@ -344,6 +467,7 @@ public class SunsetMod {
             config.get("v", "hitBox", false).set(hitBoxEnabled);
             config.get("v", "hitBoxColor", 0x00FF00).set(hitBoxColor);
             config.get("v", "hitBoxTargetColor", 0xFF0000).set(hitBoxTargetColor);
+            config.get("v", "disFire", true).set(disFireEnabled);
 
             config.get("hud", "keysInf", false).set(keysInfEnabled);
             config.get("hud", "keysInfCorner", 0).set(keysInfCorner);
@@ -359,12 +483,11 @@ public class SunsetMod {
             config.get("hud", "pingColor", 0xFFFFFF).set(pingColor);
             config.get("hud", "armorHud", false).set(armorHudEnabled);
             config.get("hud", "potionTimer", false).set(potionTimerEnabled);
-            config.get("misc", "chatTimestamps", false).set(chatTimestampsEnabled);
-            config.get("misc", "disFire", true).set(disFireEnabled);
             config.save();
         } catch (Exception e) { LOG.error(e); }
     }
 
+    // ===================== GUI =====================
     public static class SunsetGui extends GuiScreen {
 
         private static final int W = 280, H = 300, TITLE_H = 20;
@@ -387,12 +510,23 @@ public class SunsetMod {
         }
 
         private void layout() {
-            // Сохраняем expanded по имени
             Map<String, Boolean> state = new HashMap<>();
             for (Btn b : buttons) state.put(b.name, b.expanded);
 
             buttons.clear(); headerNames.clear(); headerOffsets.clear();
             int off = 0;
+
+            headerNames.add("Combat"); headerOffsets.add(off); off += ROW;
+            off = addWithState(new Btn("KillAura", () -> killAuraEnabled, v -> {
+                killAuraEnabled = v;
+                if (v) triggerBotEnabled = false;
+            }, new Sl("FOV", () -> killAuraFov, v -> killAuraFov = v, 1f, 180f),
+                    new Sl("Miss %", () -> killAuraMiss, v -> killAuraMiss = v, 0f, 100f)), off, state);
+            off = addWithState(new Btn("TriggerBot", () -> triggerBotEnabled, v -> {
+                triggerBotEnabled = v;
+                if (v) killAuraEnabled = false;
+            }, new Sl("Miss %", () -> triggerBotMiss, v -> triggerBotMiss = v, 0f, 100f)), off, state);
+            off += 4;
 
             headerNames.add("Visual"); headerOffsets.add(off); off += ROW;
             off = addWithState(new Btn("Fullbright", () -> fullbrightEnabled, v -> fullbrightEnabled = v), off, state);
@@ -421,10 +555,6 @@ public class SunsetMod {
                     new Cl("Text", () -> pingColor, v -> pingColor = v)), off, state);
             off = addWithState(new Btn("ArmorHUD", () -> armorHudEnabled, v -> armorHudEnabled = v), off, state);
             off = addWithState(new Btn("PotionTimer", () -> potionTimerEnabled, v -> potionTimerEnabled = v), off, state);
-            off += 4;
-
-            headerNames.add("Misc"); headerOffsets.add(off); off += ROW;
-            off = addWithState(new Btn("ChatTimestamps", () -> chatTimestampsEnabled, v -> chatTimestampsEnabled = v), off, state);
 
             contentH = off;
         }
@@ -444,7 +574,7 @@ public class SunsetMod {
             drawRect(0, 0, width, height, new Color(0, 0, 0, 140).getRGB());
             drawRect(x, y, x + W, y + H, 0xC0000000);
             drawRect(x, y, x + W, y + TITLE_H, 0xFF1E1E1E);
-            drawString(fontRenderer, "Sunset 3.1", x + 6, y + 6, 0xFFFFFF);
+            drawString(fontRenderer, "Sunset 4.0", x + 6, y + 6, 0xFFFFFF);
 
             for (int i = 0; i < headerNames.size(); i++) {
                 fontRenderer.drawString(headerNames.get(i), x + 8,
@@ -470,24 +600,17 @@ public class SunsetMod {
         @Override
         protected void mouseClicked(int mx, int my, int btn) throws java.io.IOException {
             if (!inside(mx, my)) { super.mouseClicked(mx, my, btn); return; }
-
             if (btn == 0 && my >= y && my <= y + TITLE_H) {
-                dragging = true;
-                dragX = mx - x;
-                dragY = my - y;
-                return;
+                dragging = true; dragX = mx - x; dragY = my - y; return;
             }
 
-            // Итерируемся по копии списка, layout() вызываем ПОСЛЕ цикла
             List<Btn> copy = new ArrayList<>(buttons);
             boolean needLayout = false;
-
             for (Btn b : copy) {
                 boolean before = b.expanded;
                 b.click(mx, my, btn, x + 5, y + HEADER_OFF + b.offset + scroll);
                 if (b.expanded != before) needLayout = true;
             }
-
             if (needLayout) layout();
 
             super.mouseClicked(mx, my, btn);
@@ -555,74 +678,4 @@ public class SunsetMod {
             }
         }
         void click(int mx, int my, int btn, int ax, int ay) {
-            if (mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12) {
-                if (btn == 0 && get != null) set.set(!get.get());
-                else if (btn == 1) expanded = !expanded;
-                return;
-            }
-            if (!expanded) return;
-            int sy = ay + 14;
-            for (Sl s : sliders) {
-                if (btn == 0 && mx >= ax + 5 && mx <= ax + 145 && my >= sy && my <= sy + 10) s.drag = true;
-                sy += 12;
-            }
-            for (Cl ce : colors) { ce.click(mx, my, btn, ax + 5, sy); sy += 12; }
-        }
-        void release() { for (Sl s : sliders) s.drag = false; }
-    }
-
-    public static class Sl {
-        public interface FG { float get(); }
-        public interface FS { void set(float v); }
-        final String name; final FG get; final FS set;
-        final float min, max; boolean drag;
-        public Sl(String n, FG g, FS s, float mn, float mx) { name = n; get = g; set = s; min = mn; max = mx; }
-        void draw(int sx, int sy, int mx) {
-            Minecraft mc = Minecraft.getMinecraft();
-            int w = 140, h = 10;
-            float v = get.get();
-            float p = Math.max(0, Math.min(1, (v - min) / (max - min)));
-            Gui.drawRect(sx, sy, sx + w, sy + h, 0xAA282828);
-            Gui.drawRect(sx, sy, (int)(sx + w * p), sy + h, 0xFF3399FF);
-            String val = (max - min) > 10 ? String.format("%.0f", v) : String.format("%.1f", v);
-            mc.fontRenderer.drawString(name + ": " + val, sx + 2, sy + 1, 0xFFFFFF);
-            if (drag) {
-                float np = Math.max(0, Math.min(1, (float)(mx - sx) / w));
-                set.set(min + np * (max - min));
-            }
-        }
-    }
-
-    public static class Cl {
-        public interface IG { int get(); }
-        public interface IS { void set(int v); }
-        static final int[] PRESETS = {
-            0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00,
-            0xFF00FF, 0x00FFFF, 0xFFFFFF, 0x000000,
-            0x3399FF, 0x87CEEB, 0xAAAAAA, 0xFF8000
-        };
-        final String name; final IG get; final IS set;
-        public Cl(String n, IG g, IS s) { name = n; get = g; set = s; }
-        void draw(int sx, int sy, int mx, int my) {
-            Minecraft mc = Minecraft.getMinecraft();
-            int v = get.get();
-            Gui.drawRect(sx, sy, sx + 160, sy + 10, 0xAA282828);
-            int sq = 9;
-            for (int i = 0; i < PRESETS.length; i++) {
-                int px = sx + 2 + i * (sq + 1);
-                Gui.drawRect(px, sy + 1, px + sq, sy + 9, PRESETS[i] | 0xFF000000);
-                if (mx >= px && mx <= px + sq && my >= sy + 1 && my <= sy + 9)
-                    Gui.drawRect(px, sy + 9, px + sq, sy + 10, 0xFFFFFFFF);
-            }
-            Gui.drawRect(sx + 145, sy + 2, sx + 155, sy + 8, v | 0xFF000000);
-        }
-        void click(int mx, int my, int btn, int ax, int ay) {
-            if (my < ay || my > ay + 10) return;
-            int sq = 9;
-            for (int i = 0; i < PRESETS.length; i++) {
-                int px = ax + 2 + i * (sq + 1);
-                if (btn == 0 && mx >= px && mx <= px + sq) { set.set(PRESETS[i]); return; }
-            }
-        }
-    }
-}
+            if (mx >= ax &&
