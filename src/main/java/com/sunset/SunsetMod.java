@@ -50,19 +50,20 @@ public class SunsetMod {
     private static Configuration config;
     public static KeyBinding guiKey;
 
+    // ===================== COMBAT =====================
     public static boolean killAuraEnabled = false;
     public static float killAuraFov = 30f;
     public static float killAuraMiss = 20f;
-    public static int killAuraMode = 0;
-    public static boolean killAuraCrit = false;
+    public static int killAuraMode = 0; // 0 = SPAM, 1 = Normal
 
     public static boolean triggerBotEnabled = false;
     public static float triggerBotMiss = 20f;
-    public static int triggerBotMode = 0;
+    public static int triggerBotMode = 0; // 0 = SPAM, 1 = Normal
 
     private static long killAuraLast = 0;
     private static long triggerBotLast = 0;
 
+    // ===================== VISUAL =====================
     public static boolean fullbrightEnabled = false;
     public static float savedGamma = -1f;
 
@@ -77,8 +78,8 @@ public class SunsetMod {
     public static int hitBoxTargetColor = 0xFF0000;
 
     public static boolean disFireEnabled = true;
-    public static boolean xrayEnabled = false;
 
+    // ===================== HUD =====================
     public static boolean keysInfEnabled = false;
     public static int keysInfCorner = 0;
     public static int keysInfColor = 0xFFFFFF;
@@ -122,6 +123,7 @@ public class SunsetMod {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+
         Minecraft mc = mc();
         if (mc.gameSettings != null) {
             if (fullbrightEnabled) {
@@ -132,6 +134,7 @@ public class SunsetMod {
                 savedGamma = -1f;
             }
         }
+
         if (killAuraEnabled) doKillAura();
         if (triggerBotEnabled) doTriggerBot();
     }
@@ -152,20 +155,20 @@ public class SunsetMod {
             if (!living.isEntityAlive()) continue;
             if (!mc.player.canEntityBeSeen(living)) continue;
             if (!isInFov(mc, living, killAuraFov)) continue;
+
             double d = mc.player.getDistance(living);
             if (d < bestDist) { bestDist = d; target = living; }
         }
 
         if (target == null) return;
 
-        if (killAuraCrit) {
-            if (mc.player.onGround) { mc.player.jump(); return; }
-            if (mc.player.motionY >= 0) return;
-            if (mc.player.fallDistance <= 0) return;
-        }
-
         long now = System.currentTimeMillis();
-        int delay = (killAuraMode == 1) ? randInt(1423, 1726) : randInt(10, 80);
+        int delay;
+        if (killAuraMode == 1) {
+            delay = randInt(836, 923);
+        } else {
+            delay = randInt(10, 80);
+        }
         if (now - killAuraLast < delay) return;
         killAuraLast = now;
 
@@ -204,7 +207,12 @@ public class SunsetMod {
         if (!mc.player.canEntityBeSeen(target)) return;
 
         long now = System.currentTimeMillis();
-        int delay = (triggerBotMode == 1) ? randInt(1423, 1726) : randInt(30, 90);
+        int delay;
+        if (triggerBotMode == 1) {
+            delay = randInt(836, 923);
+        } else {
+            delay = randInt(30, 90);
+        }
         if (now - triggerBotLast < delay) return;
         triggerBotLast = now;
 
@@ -418,7 +426,7 @@ public class SunsetMod {
             killAuraFov = (float) config.get("combat", "killAuraFov", 30.0).getDouble();
             killAuraMiss = (float) config.get("combat", "killAuraMiss", 20.0).getDouble();
             killAuraMode = config.get("combat", "killAuraMode", 0).getInt();
-            killAuraCrit = config.get("combat", "killAuraCrit", false).getBoolean();
+
             triggerBotEnabled = config.get("combat", "triggerBot", false).getBoolean();
             triggerBotMiss = (float) config.get("combat", "triggerBotMiss", 20.0).getDouble();
             triggerBotMode = config.get("combat", "triggerBotMode", 0).getInt();
@@ -432,7 +440,6 @@ public class SunsetMod {
             hitBoxColor = config.get("v", "hitBoxColor", 0x00FF00).getInt();
             hitBoxTargetColor = config.get("v", "hitBoxTargetColor", 0xFF0000).getInt();
             disFireEnabled = config.get("v", "disFire", true).getBoolean();
-            xrayEnabled = config.get("v", "xray", false).getBoolean();
 
             keysInfEnabled = config.get("hud", "keysInf", false).getBoolean();
             keysInfCorner = config.get("hud", "keysInfCorner", 0).getInt();
@@ -460,7 +467,7 @@ public class SunsetMod {
             config.get("combat", "killAuraFov", 30.0).set(killAuraFov);
             config.get("combat", "killAuraMiss", 20.0).set(killAuraMiss);
             config.get("combat", "killAuraMode", 0).set(killAuraMode);
-            config.get("combat", "killAuraCrit", false).set(killAuraCrit);
+
             config.get("combat", "triggerBot", false).set(triggerBotEnabled);
             config.get("combat", "triggerBotMiss", 20.0).set(triggerBotMiss);
             config.get("combat", "triggerBotMode", 0).set(triggerBotMode);
@@ -474,7 +481,6 @@ public class SunsetMod {
             config.get("v", "hitBoxColor", 0x00FF00).set(hitBoxColor);
             config.get("v", "hitBoxTargetColor", 0xFF0000).set(hitBoxTargetColor);
             config.get("v", "disFire", true).set(disFireEnabled);
-            config.get("v", "xray", false).set(xrayEnabled);
 
             config.get("hud", "keysInf", false).set(keysInfEnabled);
             config.get("hud", "keysInfCorner", 0).set(keysInfCorner);
@@ -494,13 +500,15 @@ public class SunsetMod {
         } catch (Exception e) { LOG.error(e); }
     }
 
-    // ===== GUI =====
     public static class SunsetGui extends GuiScreen {
+
         private static final int W = 280, H = 300, TITLE_H = 20;
         private static final int HEADER_OFF = TITLE_H + 5, ROW = 14;
+
         private int x, y, dragX, dragY;
         private boolean dragging;
         private int scroll, contentH;
+
         private final List<Btn> buttons = new ArrayList<>();
         private final List<Integer> headerOffsets = new ArrayList<>();
         private final List<String> headerNames = new ArrayList<>();
@@ -516,18 +524,20 @@ public class SunsetMod {
         private void layout() {
             Map<String, Boolean> state = new HashMap<>();
             for (Btn b : buttons) state.put(b.name, b.expanded);
+
             buttons.clear(); headerNames.clear(); headerOffsets.clear();
             int off = 0;
 
             headerNames.add("Combat"); headerOffsets.add(off); off += ROW;
             off = addWithState(new Btn("KillAura", () -> killAuraEnabled, v -> {
-                killAuraEnabled = v; if (v) triggerBotEnabled = false;
+                killAuraEnabled = v;
+                if (v) triggerBotEnabled = false;
             }, new Sl("FOV", () -> killAuraFov, v -> killAuraFov = v, 1f, 180f),
                     new Sl("Miss %", () -> killAuraMiss, v -> killAuraMiss = v, 0f, 100f),
-                    new Md("Mode", () -> killAuraMode, v -> killAuraMode = v),
-                    new Tg("Crit", () -> killAuraCrit, v -> killAuraCrit = v)), off, state);
+                    new Md("Mode", () -> killAuraMode, v -> killAuraMode = v)), off, state);
             off = addWithState(new Btn("TriggerBot", () -> triggerBotEnabled, v -> {
-                triggerBotEnabled = v; if (v) killAuraEnabled = false;
+                triggerBotEnabled = v;
+                if (v) killAuraEnabled = false;
             }, new Sl("Miss %", () -> triggerBotMiss, v -> triggerBotMiss = v, 0f, 100f),
                     new Md("Mode", () -> triggerBotMode, v -> triggerBotMode = v)), off, state);
             off += 4;
@@ -542,7 +552,6 @@ public class SunsetMod {
                     new Cl("Self", () -> hitBoxColor, v -> hitBoxColor = v),
                     new Cl("Target", () -> hitBoxTargetColor, v -> hitBoxTargetColor = v)), off, state);
             off = addWithState(new Btn("DisFire", () -> disFireEnabled, v -> disFireEnabled = v), off, state);
-            off = addWithState(new Btn("X-Ray", () -> xrayEnabled, v -> xrayEnabled = v), off, state);
             off += 4;
 
             headerNames.add("HUD"); headerOffsets.add(off); off += ROW;
@@ -560,6 +569,7 @@ public class SunsetMod {
                     new Cl("Text", () -> pingColor, v -> pingColor = v)), off, state);
             off = addWithState(new Btn("ArmorHUD", () -> armorHudEnabled, v -> armorHudEnabled = v), off, state);
             off = addWithState(new Btn("PotionTimer", () -> potionTimerEnabled, v -> potionTimerEnabled = v), off, state);
+
             contentH = off;
         }
 
@@ -579,11 +589,13 @@ public class SunsetMod {
             drawRect(x, y, x + W, y + H, 0xC0000000);
             drawRect(x, y, x + W, y + TITLE_H, 0xFF1E1E1E);
             drawString(fontRenderer, "Sunset 4.1", x + 6, y + 6, 0xFFFFFF);
+
             for (int i = 0; i < headerNames.size(); i++) {
                 fontRenderer.drawString(headerNames.get(i), x + 8,
                         y + HEADER_OFF + headerOffsets.get(i) + scroll, 0xAAAAAA);
             }
             for (Btn b : buttons) b.draw(x + 5, y + HEADER_OFF + b.offset + scroll, mx, my);
+
             int vh = viewH();
             if (contentH > vh) {
                 int bx = x + W - 5, by = y + HEADER_OFF;
@@ -605,6 +617,7 @@ public class SunsetMod {
             if (btn == 0 && my >= y && my <= y + TITLE_H) {
                 dragging = true; dragX = mx - x; dragY = my - y; return;
             }
+
             List<Btn> copy = new ArrayList<>(buttons);
             boolean needLayout = false;
             for (Btn b : copy) {
@@ -613,6 +626,7 @@ public class SunsetMod {
                 if (b.expanded != before) needLayout = true;
             }
             if (needLayout) layout();
+
             super.mouseClicked(mx, my, btn);
         }
 
@@ -657,7 +671,6 @@ public class SunsetMod {
         final List<Sl> sliders = new ArrayList<>();
         final List<Cl> colors = new ArrayList<>();
         final List<Md> modes = new ArrayList<>();
-        final List<Tg> toggles = new ArrayList<>();
         int offset; boolean expanded;
         public Btn(String n, BG g, BS s, Object... items) {
             name = n; get = g; set = s;
@@ -665,12 +678,11 @@ public class SunsetMod {
                 if (o instanceof Sl) sliders.add((Sl) o);
                 else if (o instanceof Cl) colors.add((Cl) o);
                 else if (o instanceof Md) modes.add((Md) o);
-                else if (o instanceof Tg) toggles.add((Tg) o);
             }
         }
         int contentHeight() {
             if (!expanded) return 0;
-            return (sliders.size() + colors.size() + modes.size() + toggles.size()) * 12;
+            return (sliders.size() + colors.size() + modes.size()) * 12;
         }
         void draw(int ax, int ay, int mx, int my) {
             Minecraft mc = Minecraft.getMinecraft();
@@ -684,7 +696,6 @@ public class SunsetMod {
                 for (Sl s : sliders) { s.draw(ax + 5, sy, mx); sy += 12; }
                 for (Cl ce : colors) { ce.draw(ax + 5, sy, mx, my); sy += 12; }
                 for (Md m : modes) { m.draw(ax + 5, sy, mx, my); sy += 12; }
-                for (Tg t : toggles) { t.draw(ax + 5, sy, mx, my); sy += 12; }
             }
         }
         void click(int mx, int my, int btn, int ax, int ay) {
@@ -701,7 +712,6 @@ public class SunsetMod {
             }
             for (Cl ce : colors) { ce.click(mx, my, btn, ax + 5, sy); sy += 12; }
             for (Md m : modes) { m.click(mx, my, btn, ax + 5, sy); sy += 12; }
-            for (Tg t : toggles) { t.click(mx, my, btn, ax + 5, sy); sy += 12; }
         }
         void release() { for (Sl s : sliders) s.drag = false; }
     }
@@ -711,7 +721,9 @@ public class SunsetMod {
         public interface FS { void set(float v); }
         final String name; final FG get; final FS set;
         final float min, max; boolean drag;
-        public Sl(String n, FG g, FS s, float mn, float mx) { name = n; get = g; set = s; min = mn; max = mx; }
+        public Sl(String n, FG g, FS s, float mn, float mx) {
+            name = n; get = g; set = s; min = mn; max = mx;
+        }
         void draw(int sx, int sy, int mx) {
             Minecraft mc = Minecraft.getMinecraft();
             int w = 140, h = 10;
@@ -782,30 +794,6 @@ public class SunsetMod {
             if (my < ay || my > ay + 10) return;
             if (mx >= ax + 2 && mx <= ax + 78) { set.accept(0); return; }
             if (mx >= ax + 80 && mx <= ax + 156) { set.accept(1); return; }
-        }
-    }
-
-    public static class Tg {
-        final String name;
-        final java.util.function.BooleanSupplier get;
-        final java.util.function.Consumer<Boolean> set;
-        public Tg(String n, java.util.function.BooleanSupplier g, java.util.function.Consumer<Boolean> s) {
-            name = n; get = g; set = s;
-        }
-        void draw(int sx, int sy, int mx, int my) {
-            Minecraft mc = Minecraft.getMinecraft();
-            boolean v = get.getAsBoolean();
-            Gui.drawRect(sx, sy, sx + 160, sy + 10, 0xAA282828);
-            Gui.drawRect(sx + 2, sy + 1, sx + 78, sy + 9, !v ? 0xFF3399FF : 0xFF282828);
-            Gui.drawRect(sx + 80, sy + 1, sx + 156, sy + 9, v ? 0xFF3399FF : 0xFF282828);
-            mc.fontRenderer.drawString("OFF", sx + 30, sy + 1, 0xFFFFFF);
-            mc.fontRenderer.drawString("ON", sx + 108, sy + 1, 0xFFFFFF);
-        }
-        void click(int mx, int my, int btn, int ax, int ay) {
-            if (btn != 0) return;
-            if (my < ay || my > ay + 10) return;
-            if (mx >= ax + 2 && mx <= ax + 78) { set.accept(false); return; }
-            if (mx >= ax + 80 && mx <= ax + 156) { set.accept(true); return; }
         }
     }
 }
