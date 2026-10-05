@@ -7,11 +7,8 @@ import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.item.EntityXPOrb;
-import net.minecraft.item.crafting.CraftingManager;
-import net.minecraft.item.crafting.IRecipe;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -49,7 +46,6 @@ public class SuniumMod {
     public static final int AUTO_PARTICLES_THRESHOLD = 40;
     private static int savedParticleSetting = -1;
 
-    public static boolean recipeCleaner = true;
     public static boolean textureAnimOff = false;
 
     public static boolean dropMerger = true;
@@ -103,7 +99,7 @@ public class SuniumMod {
         }
 
         if (backgroundFpsEnabled) {
-            if (!mc.isGameFocused()) {
+            if (!org.lwjgl.opengl.Display.isActive()) {
                 if (savedLimitFramerate < 0) savedLimitFramerate = mc.gameSettings.limitFramerate;
                 if (mc.gameSettings.limitFramerate > BACKGROUND_FPS) {
                     mc.gameSettings.limitFramerate = BACKGROUND_FPS;
@@ -181,25 +177,6 @@ public class SuniumMod {
     }
 
     @SubscribeEvent
-    public void onWorldLoad(WorldEvent.Load event) {
-        if (!recipeCleaner) return;
-        if (!event.getWorld().isRemote) return;
-
-        try {
-            java.lang.reflect.Field f = CraftingManager.class.getDeclaredField("recipes");
-            f.setAccessible(true);
-            List<IRecipe> recipes = (List<IRecipe>) f.get(CraftingManager.getInstance());
-            if (recipes != null) {
-                int before = recipes.size();
-                recipes.clear();
-                LOG.info("RecipeCleaner cleared " + before + " recipes");
-            }
-        } catch (Exception e) {
-            LOG.error("RecipeCleaner failed", e);
-        }
-    }
-
-    @SubscribeEvent
     public void onTextureStitch(TextureStitchEvent.Pre event) {
         if (!textureAnimOff) return;
         try {
@@ -222,7 +199,7 @@ public class SuniumMod {
         private final List<Integer> headerOffsets = new ArrayList<>();
         private final List<String> headerNames = new ArrayList<>();
 
-        private static final int W = 260, H = 200, TITLE_H = 18;
+        private static final int W = 260, H = 180, TITLE_H = 18;
         private static final int HEADER_OFF = TITLE_H + 6;
         private static final int ROW = 14;
 
@@ -235,9 +212,6 @@ public class SuniumMod {
         }
 
         private void layout() {
-            Map<String, Boolean> state = new HashMap<>();
-            for (Btn b : buttons) state.put(b.name, b.expanded);
-
             buttons.clear(); headerNames.clear(); headerOffsets.clear();
             int off = 0;
 
@@ -248,7 +222,6 @@ public class SuniumMod {
             off += 4;
 
             headerNames.add("World"); headerOffsets.add(off); off += ROW;
-            off = add(new Btn("RecipeCleaner", () -> recipeCleaner, v -> recipeCleaner = v), off);
             off = add(new Btn("TextureAnimOff", () -> textureAnimOff, v -> textureAnimOff = v), off);
             off = add(new Btn("DropMerger", () -> dropMerger, v -> dropMerger = v), off);
         }
@@ -309,7 +282,7 @@ public class SuniumMod {
         public interface BG { boolean get(); }
         public interface BS { void set(boolean v); }
         final String name; final BG get; final BS set;
-        int offset; boolean expanded;
+        int offset;
         public Btn(String n, BG g, BS s, Object... items) {
             name = n; get = g; set = s;
         }
@@ -318,7 +291,6 @@ public class SuniumMod {
             boolean hover = mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12;
             Gui.drawRect(ax, ay, ax + 170, ay + 12, hover ? 0xBB282828 : 0xAA181818);
             int c = (get != null && get.get()) ? 0xFF00FF00 : 0xFFFF5555;
-            if (get == null) c = 0xFFFFFFFF;
             mc.fontRenderer.drawString(name, ax + 3, ay + 2, c);
         }
         void click(int mx, int my, int btn, int ax, int ay) {
