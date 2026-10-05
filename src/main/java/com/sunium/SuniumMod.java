@@ -1,301 +1,317 @@
 package com.sunium;
 
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.settings.KeyBinding;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.item.EntityItem;
-import net.minecraft.entity.item.EntityXPOrb;
-import net.minecraftforge.client.event.TextureStitchEvent;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.client.registry.ClientRegistry;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockFlower;
+import net.minecraft.block.ITileEntityProvider;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.renderer.block.model.ModelResourceLocation;
+import net.minecraft.creativetab.CreativeTabs;
+import net.minecraft.init.Blocks;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemBlock;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.NonNullList;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.IBlockAccess;
+import net.minecraft.world.World;
+import net.minecraft.world.chunk.IChunkProvider;
+import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraftforge.client.event.ModelRegistryEvent;
+import net.minecraftforge.client.model.ModelLoader;
+import net.minecraftforge.event.RegistryEvent;
+import net.minecraftforge.fml.common.IWorldGenerator;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.InputEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.common.registry.GameRegistry;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import net.minecraftforge.registries.IForgeRegistry;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.awt.Color;
+import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Random;
 
-@Mod(modid = "sunium", name = "Sunium", version = "5.0",
+@Mod(modid = "sunium", name = "Sunium", version = "6.0",
         acceptedMinecraftVersions = "[1.12.2]")
 public class SuniumMod {
 
+    public static final String MODID = "sunium";
     private static final Logger LOG = LogManager.getLogger("Sunium");
-    public static KeyBinding guiKey;
 
-    public static boolean autoRenderDistance = true;
-    public static final int MIN_RENDER_DIST = 4;
-    public static final int MAX_RENDER_DIST = 12;
-    public static final int AUTO_DIST_THRESHOLD = 45;
-    private static int savedRenderDistance = -1;
+    // ===================== ЦВЕТЫ =====================
+    public static Block chamomile;
+    public static Block lavender;
+    public static Block ashbloom;
+    public static Block bluebell;
+    public static Block seaRose;
+    public static Block whitePoppy;
 
-    public static boolean backgroundFpsEnabled = true;
-    public static final int BACKGROUND_FPS = 30;
-    private static int savedLimitFramerate = -1;
+    public static final List<Block> ALL_FLOWERS = new ArrayList<>();
 
-    public static boolean autoParticles = true;
-    public static final int AUTO_PARTICLES_THRESHOLD = 40;
-    private static int savedParticleSetting = -1;
+    // ===================== КРЕАТИВ-ТАБ =====================
+    public static final CreativeTabs SUNIUM_TAB = new CreativeTabs("sunium") {
+        @Override
+        public ItemStack getTabIconItem() {
+            return new ItemStack(chamomile);
+        }
+    };
 
-    public static boolean textureAnimOff = false;
-
-    public static boolean dropMerger = true;
-    public static final float MERGE_RADIUS = 2.0f;
-    private static long lastMergeTick = 0;
-
-    private static Minecraft mc() { return Minecraft.getMinecraft(); }
-
+    // ===================== ИНИЦИАЛИЗАЦИЯ =====================
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         LOG.info("Sunium preInit");
+        GameRegistry.registerTileEntity(TileEntityFlower.class, MODID + ":flower");
     }
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
-        guiKey = new KeyBinding("Open Sunium GUI", org.lwjgl.input.Keyboard.KEY_RSHIFT, "Sunium");
-        ClientRegistry.registerKeyBinding(guiKey);
-        MinecraftForge.EVENT_BUS.register(this);
+        GameRegistry.registerWorldGenerator(new FlowerGenerator(), 0);
         LOG.info("Sunium initialized");
     }
 
-    @SubscribeEvent
-    public void onKey(InputEvent.KeyInputEvent event) {
-        if (guiKey == null) return;
-        if (guiKey.isPressed() && mc().currentScreen == null) {
-            mc().displayGuiScreen(new SuniumGui());
-        }
-    }
+    // ===================== РЕГИСТРАЦИЯ =====================
+    @Mod.EventBusSubscriber(modid = MODID)
+    public static class RegistryHandler {
 
-    @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) return;
-        Minecraft mc = mc();
-        if (mc.gameSettings == null) return;
+        @SubscribeEvent
+        public static void registerBlocks(RegistryEvent.Register<Block> event) {
+            IForgeRegistry<Block> r = event.getRegistry();
 
-        if (autoRenderDistance) {
-            int fps = Minecraft.getDebugFPS();
-            if (savedRenderDistance < 0) savedRenderDistance = mc.gameSettings.renderDistanceChunks;
-            if (fps > 0 && fps < AUTO_DIST_THRESHOLD) {
-                if (mc.gameSettings.renderDistanceChunks > MIN_RENDER_DIST) {
-                    mc.gameSettings.renderDistanceChunks--;
-                }
-            } else if (fps > AUTO_DIST_THRESHOLD + 15) {
-                if (mc.gameSettings.renderDistanceChunks < MAX_RENDER_DIST) {
-                    mc.gameSettings.renderDistanceChunks++;
-                }
-            }
-        } else if (savedRenderDistance >= 0) {
-            mc.gameSettings.renderDistanceChunks = savedRenderDistance;
-            savedRenderDistance = -1;
+            chamomile = new FlowerBase("chamomile");
+            lavender = new FlowerBase("lavender");
+            ashbloom = new FlowerBase("ashbloom");
+            bluebell = new FlowerBase("bluebell");
+            seaRose = new FlowerBase("sea_rose");
+            whitePoppy = new FlowerBase("white_poppy");
+
+            ALL_FLOWERS.add(chamomile);
+            ALL_FLOWERS.add(lavender);
+            ALL_FLOWERS.add(ashbloom);
+            ALL_FLOWERS.add(bluebell);
+            ALL_FLOWERS.add(seaRose);
+            ALL_FLOWERS.add(whitePoppy);
+
+            r.registerAll(chamomile, lavender, ashbloom, bluebell, seaRose, whitePoppy);
         }
 
-        if (backgroundFpsEnabled) {
-            if (!org.lwjgl.opengl.Display.isActive()) {
-                if (savedLimitFramerate < 0) savedLimitFramerate = mc.gameSettings.limitFramerate;
-                if (mc.gameSettings.limitFramerate > BACKGROUND_FPS) {
-                    mc.gameSettings.limitFramerate = BACKGROUND_FPS;
-                }
-            } else if (savedLimitFramerate >= 0) {
-                mc.gameSettings.limitFramerate = savedLimitFramerate;
-                savedLimitFramerate = -1;
-            }
-        } else if (savedLimitFramerate >= 0) {
-            mc.gameSettings.limitFramerate = savedLimitFramerate;
-            savedLimitFramerate = -1;
+        @SubscribeEvent
+        public static void registerItems(RegistryEvent.Register<Item> event) {
+            IForgeRegistry<Item> r = event.getRegistry();
+            r.register(new ItemBlockFlower(chamomile).setRegistryName("chamomile"));
+            r.register(new ItemBlockFlower(lavender).setRegistryName("lavender"));
+            r.register(new ItemBlockFlower(ashbloom).setRegistryName("ashbloom"));
+            r.register(new ItemBlockFlower(bluebell).setRegistryName("bluebell"));
+            r.register(new ItemBlockFlower(seaRose).setRegistryName("sea_rose"));
+            r.register(new ItemBlockFlower(whitePoppy).setRegistryName("white_poppy"));
         }
 
-        if (autoParticles) {
-            int fps = Minecraft.getDebugFPS();
-            if (savedParticleSetting < 0) savedParticleSetting = mc.gameSettings.particleSetting;
-            if (fps > 0 && fps < AUTO_PARTICLES_THRESHOLD) {
-                if (mc.gameSettings.particleSetting < 2) {
-                    mc.gameSettings.particleSetting = 2;
-                }
-            } else if (fps > AUTO_PARTICLES_THRESHOLD + 20) {
-                mc.gameSettings.particleSetting = savedParticleSetting;
-            }
-        } else if (savedParticleSetting >= 0) {
-            mc.gameSettings.particleSetting = savedParticleSetting;
-            savedParticleSetting = -1;
-        }
-
-        if (dropMerger && mc.world != null && mc.player != null) {
-            long now = mc.world.getTotalWorldTime();
-            if (now - lastMergeTick >= 20) {
-                lastMergeTick = now;
-                mergeDrops(mc);
+        @SideOnly(Side.CLIENT)
+        @SubscribeEvent
+        public static void registerModels(ModelRegistryEvent event) {
+            for (Block b : ALL_FLOWERS) {
+                ModelLoader.setCustomModelResourceLocation(
+                        Item.getItemFromBlock(b), 0,
+                        new ModelResourceLocation(b.getRegistryName(), "inventory")
+                );
             }
         }
     }
 
-    private static void mergeDrops(Minecraft mc) {
-        List<Entity> items = new ArrayList<>();
-        for (Entity e : mc.world.loadedEntityList) {
-            if (e instanceof EntityItem || e instanceof EntityXPOrb) items.add(e);
+    // ===================== БЛОК ЦВЕТКА =====================
+    public static class FlowerBase extends BlockFlower implements ITileEntityProvider {
+
+        private static final AxisAlignedBB AABB = new AxisAlignedBB(0.3, 0, 0.3, 0.7, 0.6, 0.7);
+
+        public FlowerBase(String name) {
+            super(EnumFlowerType.POPPY);
+            setRegistryName(name);
+            setUnlocalizedName(MODID + "." + name);
+            setCreativeTab(SUNIUM_TAB);
+            setHardness(0f);
         }
 
-        boolean[] removed = new boolean[items.size()];
-        for (int i = 0; i < items.size(); i++) {
-            if (removed[i]) continue;
-            Entity base = items.get(i);
-            int count = base instanceof EntityItem ? ((EntityItem) base).getItem().getCount() : 1;
+        @Override
+        public AxisAlignedBB getBoundingBox(IBlockState state, IBlockAccess source, BlockPos pos) {
+            return AABB;
+        }
 
-            for (int j = i + 1; j < items.size(); j++) {
-                if (removed[j]) continue;
-                Entity other = items.get(j);
+        @Override
+        public boolean canPlaceBlockAt(World world, BlockPos pos) {
+            Block b = world.getBlockState(pos.down()).getBlock();
+            return b == Blocks.GRASS || b == Blocks.DIRT || b == Blocks.SAND
+                    || b == Blocks.PODZOL || b == Blocks.MYCELIUM || b == Blocks.FARMLAND;
+        }
 
-                if (base.getClass() != other.getClass()) continue;
-                if (base.getDistance(other) > MERGE_RADIUS) continue;
+        @Override
+        public boolean canBlockStay(World world, BlockPos pos, IBlockState state) {
+            return canPlaceBlockAt(world, pos);
+        }
 
-                if (base instanceof EntityItem) {
-                    EntityItem b = (EntityItem) base;
-                    EntityItem o = (EntityItem) other;
-                    if (!net.minecraft.item.ItemStack.areItemStacksEqual(b.getItem(), o.getItem())) continue;
-                    if (!net.minecraft.item.ItemStack.areItemStackTagsEqual(b.getItem(), o.getItem())) continue;
-                    count += o.getItem().getCount();
-                    b.getItem().setCount(Math.min(count, 64));
-                    removed[j] = true;
-                    other.setDead();
-                } else {
-                    EntityXPOrb b = (EntityXPOrb) base;
-                    EntityXPOrb o = (EntityXPOrb) other;
-                    b.xpValue += o.xpValue;
-                    removed[j] = true;
-                    other.setDead();
+        @Override
+        public net.minecraft.block.EnumBlockRenderType getRenderType(IBlockState state) {
+            return net.minecraft.block.EnumBlockRenderType.MODEL;
+        }
+
+        @Override
+        public boolean isOpaqueCube(IBlockState state) { return false; }
+
+        @Override
+        public boolean isFullCube(IBlockState state) { return false; }
+
+        @Override
+        public boolean hasTileEntity(IBlockState state) { return true; }
+
+        @Nullable
+        @Override
+        public TileEntity createNewTileEntity(World world, int meta) {
+            return new TileEntityFlower();
+        }
+
+        @Override
+        public void onBlockPlacedBy(World world, BlockPos pos, IBlockState state,
+                                    net.minecraft.entity.EntityLivingBase placer, ItemStack stack) {
+            super.onBlockPlacedBy(world, pos, state, placer, stack);
+
+            TileEntity te = world.getTileEntity(pos);
+            if (te instanceof TileEntityFlower) {
+                int mult = 1;
+                if (stack.hasTagCompound() && stack.getTagCompound().hasKey("multiplier")) {
+                    mult = stack.getTagCompound().getInteger("multiplier");
+                    if (mult < 1) mult = 1;
+                }
+                ((TileEntityFlower) te).setMultiplier(mult);
+            }
+        }
+
+        @Override
+        public void breakBlock(World world, BlockPos pos, IBlockState state) {
+            TileEntity te = world.getTileEntity(pos);
+            int mult = 1;
+            if (te instanceof TileEntityFlower) {
+                mult = ((TileEntityFlower) te).getMultiplier();
+            }
+
+            if (!world.isRemote) {
+                int dropCount = mult;
+                int nextMult = mult * 2;
+
+                for (int i = 0; i < dropCount; i++) {
+                    ItemStack drop = new ItemStack(Item.getItemFromBlock(this), 1);
+
+                    if (i == 0) {
+                        NBTTagCompound tag = new NBTTagCompound();
+                        tag.setInteger("multiplier", nextMult);
+                        drop.setTagCompound(tag);
+                    }
+
+                    spawnAsEntity(world, pos, drop);
                 }
             }
+
+            super.breakBlock(world, pos, state);
+            world.removeTileEntity(pos);
+        }
+
+        @Override
+        public Item getItemDropped(IBlockState state, Random rand, int fortune) {
+            return null;
+        }
+
+        @Override
+        public int quantityDropped(Random random) {
+            return 0;
         }
     }
 
-    @SubscribeEvent
-    public void onTextureStitch(TextureStitchEvent.Pre event) {
-        if (!textureAnimOff) return;
-        try {
-            java.lang.reflect.Field f = net.minecraft.client.renderer.texture.TextureMap.class
-                    .getDeclaredField("animatedTextureMap");
-            f.setAccessible(true);
-            Object map = f.get(event.getMap());
-            if (map instanceof Map) {
-                ((Map) map).clear();
-            }
-        } catch (Exception ignored) {}
+    // ===================== ITEMBLOCK =====================
+    public static class ItemBlockFlower extends ItemBlock {
+        public ItemBlockFlower(Block block) {
+            super(block);
+        }
+
+        @Override
+        public void getSubItems(CreativeTabs tab, NonNullList<ItemStack> items) {
+            if (tab != SUNIUM_TAB) return;
+
+            // обычный цветок
+            items.add(new ItemStack(this, 1));
+
+            // цветок с multiplier = 2 для теста
+            ItemStack doubled = new ItemStack(this, 1);
+            NBTTagCompound tag = new NBTTagCompound();
+            tag.setInteger("multiplier", 2);
+            doubled.setTagCompound(tag);
+            items.add(doubled);
+        }
     }
 
-    public static class SuniumGui extends GuiScreen {
+    // ===================== TILEENTITY =====================
+    public static class TileEntityFlower extends TileEntity {
 
-        private int x, y, dragX, dragY;
-        private boolean dragging;
+        private int multiplier = 1;
 
-        private final List<Btn> buttons = new ArrayList<>();
-        private final List<Integer> headerOffsets = new ArrayList<>();
-        private final List<String> headerNames = new ArrayList<>();
+        public int getMultiplier() { return multiplier; }
 
-        private static final int W = 260, H = 180, TITLE_H = 18;
-        private static final int HEADER_OFF = TITLE_H + 6;
-        private static final int ROW = 14;
-
-        @Override
-        public void initGui() {
-            x = width / 2 - W / 2;
-            y = height / 2 - H / 2;
-            dragging = false;
-            layout();
-        }
-
-        private void layout() {
-            buttons.clear(); headerNames.clear(); headerOffsets.clear();
-            int off = 0;
-
-            headerNames.add("Performance"); headerOffsets.add(off); off += ROW;
-            off = add(new Btn("AutoRenderDistance", () -> autoRenderDistance, v -> autoRenderDistance = v), off);
-            off = add(new Btn("BackgroundFPS", () -> backgroundFpsEnabled, v -> backgroundFpsEnabled = v), off);
-            off = add(new Btn("AutoParticles", () -> autoParticles, v -> autoParticles = v), off);
-            off += 4;
-
-            headerNames.add("World"); headerOffsets.add(off); off += ROW;
-            off = add(new Btn("TextureAnimOff", () -> textureAnimOff, v -> textureAnimOff = v), off);
-            off = add(new Btn("DropMerger", () -> dropMerger, v -> dropMerger = v), off);
-        }
-
-        private int add(Btn b, int off) {
-            b.offset = off;
-            buttons.add(b);
-            return off + ROW;
+        public void setMultiplier(int m) {
+            this.multiplier = m;
+            markDirty();
         }
 
         @Override
-        public void drawScreen(int mx, int my, float pt) {
-            drawRect(0, 0, width, height, new Color(0, 0, 0, 140).getRGB());
-            drawRect(x, y, x + W, y + H, 0xC0000000);
-            drawRect(x, y, x + W, y + TITLE_H, 0xFF1E1E1E);
-            drawString(fontRenderer, "Sunium", x + 6, y + 5, 0xFFFFFF);
-
-            for (int i = 0; i < headerNames.size(); i++) {
-                fontRenderer.drawString(headerNames.get(i), x + 8,
-                        y + HEADER_OFF + headerOffsets.get(i), 0xAAAAAA);
-            }
-            for (Btn b : buttons) b.draw(x + 5, y + HEADER_OFF + b.offset, mx, my);
-
-            super.drawScreen(mx, my, pt);
-        }
-
-        private boolean inside(int mx, int my) { return mx >= x && mx <= x + W && my >= y && my <= y + H; }
-
-        @Override
-        protected void mouseClicked(int mx, int my, int btn) throws java.io.IOException {
-            if (!inside(mx, my)) { super.mouseClicked(mx, my, btn); return; }
-            if (btn == 0 && my >= y && my <= y + TITLE_H) {
-                dragging = true; dragX = mx - x; dragY = my - y; return;
-            }
-            for (Btn b : buttons) {
-                b.click(mx, my, btn, x + 5, y + HEADER_OFF + b.offset);
-            }
-            super.mouseClicked(mx, my, btn);
+        public void readFromNBT(NBTTagCompound compound) {
+            super.readFromNBT(compound);
+            multiplier = compound.getInteger("multiplier");
+            if (multiplier < 1) multiplier = 1;
         }
 
         @Override
-        protected void mouseReleased(int mx, int my, int state) {
-            dragging = false;
-            super.mouseReleased(mx, my, state);
+        public NBTTagCompound writeToNBT(NBTTagCompound compound) {
+            super.writeToNBT(compound);
+            compound.setInteger("multiplier", multiplier);
+            return compound;
         }
 
         @Override
-        protected void mouseClickMove(int mx, int my, int btn, long dt) {
-            if (dragging) { x = mx - dragX; y = my - dragY; }
-            super.mouseClickMove(mx, my, btn, dt);
+        public NBTTagCompound getUpdateTag() {
+            NBTTagCompound tag = super.getUpdateTag();
+            tag.setInteger("multiplier", multiplier);
+            return tag;
         }
 
         @Override
-        public boolean doesGuiPauseGame() { return false; }
+        public void handleUpdateTag(NBTTagCompound tag) {
+            super.handleUpdateTag(tag);
+            multiplier = tag.getInteger("multiplier");
+        }
     }
 
-    public static class Btn {
-        public interface BG { boolean get(); }
-        public interface BS { void set(boolean v); }
-        final String name; final BG get; final BS set;
-        int offset;
-        public Btn(String n, BG g, BS s, Object... items) {
-            name = n; get = g; set = s;
-        }
-        void draw(int ax, int ay, int mx, int my) {
-            Minecraft mc = Minecraft.getMinecraft();
-            boolean hover = mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12;
-            Gui.drawRect(ax, ay, ax + 170, ay + 12, hover ? 0xBB282828 : 0xAA181818);
-            int c = (get != null && get.get()) ? 0xFF00FF00 : 0xFFFF5555;
-            mc.fontRenderer.drawString(name, ax + 3, ay + 2, c);
-        }
-        void click(int mx, int my, int btn, int ax, int ay) {
-            if (mx >= ax && mx <= ax + 170 && my >= ay && my <= ay + 12) {
-                if (btn == 0 && get != null) set.set(!get.get());
+    // ===================== ГЕНЕРАЦИЯ =====================
+    public static class FlowerGenerator implements IWorldGenerator {
+        @Override
+        public void generate(Random random, int chunkX, int chunkZ, World world,
+                             IChunkGenerator chunkGenerator, IChunkProvider chunkProvider) {
+            if (world.provider.getDimension() != 0) return;
+
+            for (int i = 0; i < 4; i++) {
+                int x = chunkX * 16 + random.nextInt(16);
+                int z = chunkZ * 16 + random.nextInt(16);
+                int y = world.getHeight(x, z);
+
+                BlockPos pos = new BlockPos(x, y, z);
+                Block below = world.getBlockState(pos.down()).getBlock();
+
+                if (below == Blocks.GRASS && ALL_FLOWERS.size() > 0) {
+                    Block flower = ALL_FLOWERS.get(random.nextInt(ALL_FLOWERS.size()));
+                    world.setBlockState(pos, flower.getDefaultState());
+                }
             }
         }
     }
