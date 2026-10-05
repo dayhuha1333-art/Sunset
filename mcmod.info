@@ -1,11 +1,11 @@
 [
 {
-  "modid": "sunset",
-  "name": "Sunset",
-  "description": "Sunset mod",
-  "version": "1.0",
+  "modid": "sunium",
+  "name": "Sunium",
+  "description": "Sunium optimization mod",
+  "version": "5.0",
   "mcversion": "1.12.2",
-  "authorList": ["Sunset"],
+  "authorList": ["Sunium"],
   "credits": "",
   "logoFile": "",
   "screenshots": [],
